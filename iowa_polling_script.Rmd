@@ -1,0 +1,438 @@
+---
+title: "IOWA 3rd Congressional District Polling Analysis"
+author: "Ilkin Bayramli"
+date: "March 8, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+library(ggpubr)
+library(gt)
+library(tidyverse)
+```
+
+```{r question_1, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE }
+
+elections <- read_csv("mt_1_elections-poll-ia03-3.csv")
+
+# looking at the data we see that the column names are clean, so no need to use janitor.
+
+# rep_support is a descriptive variable name for Republican supporters
+
+# first, let's see if there is any weird responses that may influence our results (e.g rep, REP). This code helped 
+# Me do that. I commented them out so they weren't shown as an output in the .Rmd file.
+
+# elections %>% select(response) %>% distinct()
+
+# We have Dem, Rep, Und, 6, 5, 4, 3 as potential responses. 
+
+# Now let's see if 6, 5, 4, 3 are some polling errors or a code for some minor party
+
+# elections %>% filter(response %in% c("6", "5", "4", "3")) %>% 
+#   group_by(response) %>%
+#   summarize(n = n())
+
+# There is one 4, three 3, ten 6, and seven 5 as response. I don't think 10 people would choose party 6 as an error, so
+# my assumption is that these are some small parties in the district.
+
+# We keep the responses that correspond to rep to and then use number of rows as a count of Republican supporters
+
+rep_support <- elections %>%
+  filter(response == "Rep") %>%
+  nrow()
+
+# We get 208 which is a reasonable number
+
+# I do the same thing above, so I won't add any other comments.
+
+dem_rep_difference <- elections %>%
+  filter(response == "Dem") %>%
+  nrow() - rep_support
+  
+# I generally try to keep my code as concise and continuous as possible. That's why I just subtracted rep_support 
+# from the end of the pipe,
+
+# So, dem_support = rep_support + dem_rep_difference. The rest is simple algebra and the round function.
+
+percent_rep_dem <- round(100*(2 * rep_support + dem_rep_difference) / elections %>% nrow(),
+                          0)
+
+# Code is pretty self-explanatory, I filter to include only the rows for which gender == gender_combined and 
+# then, count the number of rows.
+
+gender_var_same <- elections %>%
+  filter(gender == gender_combined) %>%
+  nrow()
+```
+
+# Table 1
+
+```{r question_2, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+# fct_other is  more concise than recoding or reassigning factors, therefore I decided to use it.
+
+elections %>% mutate(partyid_other = fct_other(partyid,
+                                               keep = c("Democrat", "Republican"), 
+                                               other_level = "Other"),
+                     response_undecided = fct_other(response,
+                                                    keep = c("Dem", "Rep"), 
+                                                    other_level = "Undecided"),
+                     
+                     # We need to rename variables since we will need them in our table soon
+                     
+                     response_undecided = fct_collapse(response_undecided,
+                                                       Democrat = c("Dem"),
+                                                       Republican = c("Rep"))) %>%
+  
+  # Other variables are useless in the purpose of this task, so I just get rid of them.
+  
+  select(partyid_other, response_undecided) %>% 
+  
+  # Grouping by both variables and then summarizing gets the partyid_other - response_undecided pairs and then
+  # counts their occurences. This is what we exactly need.
+  
+  group_by(response_undecided, partyid_other) %>%
+  summarize(n = n()) %>%
+  
+  # spread gives our data the shape it needs 
+  
+  spread(partyid_other, n) %>%
+  
+  # To make gt() work, we need ungroup()
+  
+  ungroup() %>%
+
+ gt() %>%
+  tab_header(title = "Response - Party Affiliation Combinations") %>%
+  cols_label(response_undecided = "Response") %>%
+  
+  # This is to make the reader aware what the columns stand for 
+  
+  tab_spanner("Party ID",
+              columns = vars(Democrat, Republican, Other)) %>%
+  
+  # Since all the sources can be found in Federal Election Commission, I just cited it as a source.
+  
+  tab_source_note("SOURCE: New York Times Upshot/Siena College 2018 live polls")
+```
+
+# Table 2
+
+```{r question_3,  echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+elections %>% filter(ager != "[DO NOT READ] Refused",
+                     likely != "[DO NOT READ] Don't know/Refused",
+                     response %in% c("Dem", "Rep")) %>% 
+  
+  # since every person falls into one of 4 age categories, I decided to not write any more fancy code and just 
+  # factorize each variable to its midpoint value. If there were maybe, say, 20 such variables, then maybe
+  # writing a string-manipulating function would have been more realistic.
+  
+  # I had to convert factors to first character and then doubles because under the hood, R stores factors as 
+  # integers and the output when I converted the factors to strings was 1, 2, 3, 4. But this does not happen if 
+  # I convert them to characters and then convert those characters to numeric variables.
+  
+  mutate(ager_mid = as.numeric(as.character(fct_collapse(ager, 
+                                  "57" = c("50 to 64"),
+                                  "26" = c("18 to 34"),
+                                  "42" = c("35 to 49"),
+                                  "75" = c("65 and older"))))) %>%
+  
+  # these are the only variables I care about, so it I just keep them because this makes my data conciser and easier
+  # to work with
+  
+  select( likely, response, ager_mid) %>%
+  group_by(likely, response) %>% 
+  
+  # I decided to round the average age to the nearest integer because I thought an age description like 51.8
+  # would be nonsensical. I thought it would also distract the reader because they would have to convert 51.8 to
+  # 51 years and .8 * 12 = 9.6 months = 9 months .6 * 30 = 18 days. I don't think there is much difference between
+  # the political views of people who are 52 years old and people who are 51 years 9 months 18 days year old.
+  
+  summarize(average_age = round(mean(ager_mid))) %>% 
+  
+  # So, what I noticed was that all "not very likely" voters are Republicans and all "not at all likely" voters are
+  # Democrats. When I spreadded the data, I got NA values for Republican "not at all likely" and Democrat "not very likely"
+  # voters. I decided to replace them with0 because I think this makes the fact clear that noone voted. Because
+  # negative ages do not exist, the only way for an average to equal 0 is through noone responding (age = 0 because repsonse count = 0).
+  
+  spread(response, fill = 0, average_age) %>% 
+  
+  # Without this, gt does not work for some reason.
+  ungroup() %>% 
+  
+   # This is to order the likely variable in descending, more sensible, order 
+  
+  mutate(likely = factor(likely, levels = c("Already voted",
+                                            "Almost certain",	
+                                            "Very likely",
+                                            "Somewhat likely", 
+                                            "Not very likely",
+                                            "Not at all likely"))) %>% 
+  
+  # Factors levels don't work untill they are arranged  
+  
+  arrange(likely) %>%
+
+  # This is the standard step that I do every time to make my graph presentable. I won't make any further comments because 
+  # they would be meaningless to repeat every single time.
+  
+  gt() %>%
+  tab_header(title = "Average Age of Respondents by Voting Likelihood and Party Affiliation") %>%
+  cols_label(
+    likely = "Voting Likelihood",
+    Dem = "Democrats",
+    Rep = "Republicans"
+    ) %>%
+  
+  # Since all the sources can be found in Federal Election Commission, I just cited it as a source.
+  
+  tab_source_note("SOURCE: New York Times Upshot/Siena College 2018 live polls")
+```
+
+# Table 3
+```{r question_4,  echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+# Question 4 -------------------------------------------------------------------------------------------------
+
+# Probably the "DO NOT READ" type of responses are ommitted from this table as well, 
+# so we will filter them out first
+
+elections %>%
+  filter(race_eth != "[DO NOT READ] Don't know/Refused") %>%
+  
+  # These are the only four columns that we might potentially need, so no need to keep others around
+  
+  select(response, educ4, race_eth, final_weight) %>% 
+  
+  # The graph collapses many education categories and races. Therefore, we will use fct_other and fct_collapse.
+  
+  mutate(race_eth = fct_other(race_eth, 
+                              keep = c("White"), 
+                              other_level = "Nonwhite"), 
+         educ4 = fct_collapse(educ4, 
+                              college_grad = c("4-year College Grad.",
+                                               "Postgraduate Degree"),
+                              not_college_grad = c("High School Grad. or Less",
+                                                   "Some College Educ."))) %>%
+  
+  # This part was a little bit tricky. The Nonwhite category is not divided by education, so I had to edit the 
+  # educ4 column separately and using conditional iflese. Then, I would merge them to create a single row.
+  
+  mutate(educ4 = ifelse(race_eth == "Nonwhite", "", as.character(educ4))) %>%
+  group_by(race_eth, educ4, response) %>%
+  
+  # Not every person counts as a single person, so we will use weights to gauge numbers.
+  
+  summarize(total_weight = sum(final_weight)) %>%
+  
+  # This is to get the desirable and more concise shape we want
+  
+  spread(response, total_weight, fill = 0) %>%
+  
+  # Merging the education and race columns to fit the shape of the NYT graph
+  
+  mutate(race_eth_educ = str_c(race_eth, educ4)) %>% 
+  
+  # Percentage votes
+  
+  mutate(total = `3`+`4`+`5`+`6`+ Dem + Rep + Und,
+         Dem = Dem / total,
+         Rep = Rep / total,
+         Und = Und / total) %>%
+  
+  # Without this gt() won't work
+  
+  ungroup() %>%
+  select(race_eth_educ, Dem, Rep, Und) %>%
+  
+  # This is to get the desireable row names we want. 
+  
+  mutate(race_eth_educ = fct_collapse(race_eth_educ, "Nonwhite" = c("Nonwhite"),
+                                      "White, college grad" = c("Whitecollege_grad"),
+                                      "White, not college grad" = c("Whitenot_college_grad")),
+         
+         # Factors are for desirable order
+         
+         race_eth_educ = factor(race_eth_educ, levels = c("Nonwhite", "White, college grad", "White, not college grad"))) %>%
+  
+  # Levels don't work without rearrangement
+  
+  arrange(race_eth_educ) %>%
+  head(3) %>%
+  
+    gt() %>% 
+  
+  tab_header(
+    title = "Race and Education"
+  ) %>%  
+  
+  
+  # This is what I understood from Piazza that we had to include in our graph. 
+  # There was only one footnote, and I copy pasted it.
+  
+  tab_source_note(
+    source_note = "Percentages are weighted to resemble likely voters; the number of respondents in each subgroup is unweighted. Undecided voters includes those who refused to answer."
+  ) %>% 
+  
+  cols_label(
+    race_eth_educ = " ",
+    Dem = "DEM.",
+    Rep = "REP.",
+    Und = "UND."
+  ) %>%
+  
+  # To format the percentage
+  
+  fmt_percent(columns = vars(Dem, Rep, Und),
+              decimals = 0)
+```
+
+#Graph 1
+
+```{r question_5,  echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+# The prompt asks to be creative, so I decided to create a pie chart (we rarely do pie charts) and look at the proportion of 
+# Republican, Democratic, and Independent party supporters within each county. 
+
+# In order to do that, I needed to get data about multiple counties, but each of the data sets contain several cities most of
+# which are in the same county. Therefore, I decided to combine multiple data sets into a single one in order to get as many
+# counties as possible.
+
+# Please note that, I used the link to the raw content of the csv files in the github repo to pull the data into my dataframes.
+# This is a better way of doing it rather than downloading them individually and pushing into repo for the following reasons:
+# a) Saves space - memory costs money!
+# b) Keeps repo more organized. The less things you have on the repo the better! 
+
+data_25 <- read_csv("https://raw.githubusercontent.com/TheUpshot/2018-live-poll-results/master/data/elections-poll-ca25-1.csv")
+data_45 <- read_csv("https://raw.githubusercontent.com/TheUpshot/2018-live-poll-results/master/data/elections-poll-ca45-1.csv")
+data_48 <- read_csv("https://raw.githubusercontent.com/TheUpshot/2018-live-poll-results/master/data/elections-poll-ca48-1.csv")
+data_49 <- read_csv("https://raw.githubusercontent.com/TheUpshot/2018-live-poll-results/master/data/elections-poll-ca49-1.csv")
+
+# It happens that because it is The Upshot who preapred all the datasets all the data is very nice and have same column names
+# That's why I used bind_rows to get a single dataframe which is easier to work with.
+
+data_final <- bind_rows(data_25, 
+                        data_45, 
+                        data_48, 
+                        data_49) %>% 
+  
+  select(region, response) %>% filter(region != "Rest of LA County") %>%
+  
+  # The less columns we have the better! I filter out the ones I don't need. I also filter Rest of LA Countyr because that can be
+  # any county since CA is big and doesnt help me learn anything about my data.
+  
+  # I got this information from internet and then encoded every city to its county.
+  # Orange county stands out with being over-represented
+  
+  mutate(region = as.character(fct_collapse(region, "orange" = c("Assembly Dist. 68",   
+                                                                "Assembly Dist. 73/74",
+                                                                "Irvine",              
+                                                                "Newport Beach",       
+                                                                "Laguna Beach/South",  
+                                                                "Huntington Beach/Fountain Valley",
+                                                                "Costa Mesa/North",   
+                                                                "Orange"),
+                                            "santa clara" = c("Santa Clarita"),
+                                            "san diego" = c("San Diego"),
+                                            "ventura" = c("Ventura/Simi Valley"),
+                                            "los angeles" = c("Lancaster/Palmdale")))) %>% 
+  
+  # Factors are harder to work with than strings, so I convert my factors to the strings. Also, I turn my region names into sentence
+  # case so that they don't look bad when I get the final plot.
+  
+  mutate(region = str_to_title(region),
+         response = as.character(fct_collapse(response, Democratic = c("Dem"), Republican = c("Rep"), Undecided = c("Und")))) %>%
+  
+  transmute(Response = response, region = region) %>%
+  group_by(region, Response) %>%
+  
+  # I find the number of respondents by each democratic party because that's the best way to gauge the proportion of respondents
+  # voting for specific political parties
+  
+  summarize(n = n()) 
+  
+# So, here I am creating separate plots for each country and then merging them into a single picture. Since there are 3 response
+# categories i have kept, each county is reprented 3 times in my dataframe, and I can divide them into slices of 3 to 
+# get the plot of each state. I could write a sequence variable but since the data is small it would not have been cost-efficient, so
+# I did everything manually. I also used scale_fill_manual to get the colors I need for each party. I colored Undecided 
+# with grey color because I think it is a convention to color neutral stuff with grey. Since I do the same thing for each plot,
+# I did not comment separately for each one, Please do not cut points for "sparse commenting". There is basically nothing to commment!
+
+g1 <- ggplot() +
+  geom_col(data = data_final[1:3, ], aes(region, n, fill = Response)) +
+    coord_polar("y", start = 0) + scale_fill_manual(values = c("blue", "red", "grey")) +
+  labs(y = "Number of Respondents", x = "")
+
+g2 <- ggplot() +
+  geom_col(data = data_final[4:6, ], aes(region, n, fill = Response)) +
+    coord_polar("y", start = 0) + scale_fill_manual(values = c("blue", "red", "grey")) +
+  labs(y = "Number of Respondents", x = "")
+
+g3 <- ggplot() +
+  geom_col(data = data_final[7:9, ], aes(region, n, fill = Response)) +
+    coord_polar("y", start = 0) + scale_fill_manual(values = c("blue", "red", "grey")) +
+  labs(y = "Number of Respondents", x = "")
+
+g4 <- ggplot() +
+  geom_col(data = data_final[10:12, ], aes(region, n, fill = Response)) +
+    coord_polar("y", start = 0) + scale_fill_manual(values = c("blue", "red", "grey")) +
+  labs(y = "Number of Respondents", x = "")
+
+g5 <- ggplot() +
+  geom_col(data = data_final[13:15, ], aes(region, n, fill = Response)) +
+    coord_polar("y", start = 0) + scale_fill_manual(values = c("blue", "red", "grey")) +
+  labs(y = "Number of Respondents", x = "")
+
+# ggarrange is the function that does the job of placing multiple geom objects together to form a single picture
+
+ggarrange(g1, g2, g3, g4, g5, 
+          heights = c(1, 0.9, 0.9, 0.9, 1),
+          widths = c(1, 0.9, 0.9, 0.9, 1),
+          common.legend = TRUE, legend = "bottom") %>%
+  
+  # annotations are important. For some reason, annotate_figure was the only thing that ended up working for me.
+  
+  annotate_figure(top = "Proportion of Democratic, Republican, and Independent Party Supporters in Surveyed Counties",
+                  bottom = "Source: The Upshot")
+
+# I thought it would be useful to create a visualization of the surveyed counties for the reader to better understand the 
+# distributions
+
+# Here we get the map from a base r function that provides with longtitutde lattitutde of us states and then I filter it to
+# Only include the CA.
+
+CA <- map_data("state") %>% filter(region == "california")
+
+ggplot() +
+  
+  # Polygon does the trick for us to plot the CA as a state filled with white.
+  
+  geom_polygon(data = CA, aes(long, lat, group = group), fill = "white", colour = "black") +
+  
+  # But then, we need to fill in the states with colors, for which we use another polygon
+  
+  geom_polygon(data = map_data("county") %>% 
+                 mutate(County = str_to_title(subregion)) %>%
+                 filter(region == "california",
+                        County %in% data_final$region),
+               aes(long, lat, fill = County, group = group)) +
+  
+  # We need coord_quickmap for this thing to produce an actual map
+  
+  coord_quickmap() +
+  
+  # Making more descriptive labels
+  
+  labs(x = "lattitude",
+       y = "longtitude",
+       title = "The Map of Surveyed States in California",
+       caption = "Source: The Upshot")
+```
+
+
+
+
