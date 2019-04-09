@@ -4,4 +4,4 @@ This repository is dedicated to the analysis of polling results from the 3rd Con
 
 For graphic representations of the findings, please see:
 
-http://rpubs.com/ibayramli2001/harvard_donations
+http://rpubs.com/ibayramli2001/iowa_3rd
